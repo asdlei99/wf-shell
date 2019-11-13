@@ -195,6 +195,17 @@ static void notify_is_muted(GvcMixerControl *gvc_control,
     wf_volume->update_icon();
 }
 
+void WayfireVolume::disconnect_gvc_stream_signals()
+{
+    if (notify_volume_signal)
+        g_signal_handler_disconnect(gvc_stream, notify_volume_signal);
+    notify_volume_signal = 0;
+
+    if (notify_is_muted_signal)
+        g_signal_handler_disconnect(gvc_stream, notify_is_muted_signal);
+    notify_is_muted_signal = 0;
+}
+
 void WayfireVolume::on_default_sink_changed()
 {
     gvc_stream = gvc_mixer_control_get_default_sink(gvc_control);
@@ -204,15 +215,9 @@ void WayfireVolume::on_default_sink_changed()
     }
 
     /* Reconnect signals to new sink */
-    if (notify_volume_signal)
-        g_signal_handler_disconnect(gvc_stream, notify_volume_signal);
-
+    disconnect_gvc_stream_signals();
     notify_volume_signal = g_signal_connect (gvc_stream, "notify::volume",
         G_CALLBACK (notify_volume), this);
-
-    if (notify_is_muted_signal)
-        g_signal_handler_disconnect(gvc_stream, notify_is_muted_signal);
-
     notify_is_muted_signal = g_signal_connect (gvc_stream, "notify::is-muted",
         G_CALLBACK (notify_is_muted), this);
 
@@ -280,8 +285,8 @@ void WayfireVolume::init(Gtk::HBox *container, wayfire_config *config)
 
     /* Setup gvc control */
     gvc_control = gvc_mixer_control_new("Wayfire Volume Control");
-    g_signal_connect (gvc_control, "default-sink-changed",
-        G_CALLBACK (default_sink_changed), this);
+    notify_default_sink_changed = g_signal_connect (gvc_control,
+        "default-sink-changed", G_CALLBACK (default_sink_changed), this);
     gvc_mixer_control_open(gvc_control);
 
     /* Setup layout */
@@ -294,5 +299,13 @@ void WayfireVolume::init(Gtk::HBox *container, wayfire_config *config)
 
 WayfireVolume::~WayfireVolume()
 {
+    disconnect_gvc_stream_signals();
+
+    gvc_mixer_control_close(gvc_control);
+    g_object_unref(gvc_control);
+    if (notify_default_sink_changed)
+        g_signal_handler_disconnect(gvc_control, notify_default_sink_changed);
+
+    popover_timeout.disconnect();
     volume_size->rem_updated_handler(&volume_size_changed);
 }
